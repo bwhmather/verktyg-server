@@ -1,0 +1,427 @@
+"""
+    verktyg_server
+    ~~~~~~~~~~~~~~
+
+    :copyright:
+        (c) 2015 by Ben Mather.
+    :license:
+        BSD, see LICENSE for more details.
+"""
+import os
+import sys
+from urllib.parse import urlparse, unquote as urlunquote
+import signal
+import ssl
+import socket
+from socket import getfqdn
+import socketserver
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+import pkg_resources
+
+from verktyg.exceptions import InternalServerError
+
+from verktyg_server.ssl import load_ssl_context, generate_adhoc_ssl_context
+
+import logging
+log = logging.getLogger('verktyg_server')
+
+
+__version__ = pkg_resources.get_distribution("verktyg-server").version
+
+
+def wsgi_encoding_dance(s, charset='utf-8', errors='replace'):
+    if isinstance(s, bytes):
+        return s
+    return s.encode(charset, errors)
+
+
+class WSGIRequestHandler(BaseHTTPRequestHandler, object):
+    """A request handler that implements WSGI dispatching."""
+
+    @property
+    def server_version(self):
+        return 'verktyg-server/' + __version__
+
+    def make_environ(self):
+        request_url = urlparse(self.path)
+
+        def shutdown_server():
+            self.server.shutdown_signal = True
+
+        path_info = urlunquote(request_url.path)
+
+        environ = {
+            'wsgi.version':         (1, 0),
+            'wsgi.input':           self.rfile,
+            'wsgi.errors':          sys.stderr,
+            'wsgi.multithread':     self.server.multithread,
+            'wsgi.multiprocess':    self.server.multiprocess,
+            'wsgi.run_once':        False,
+            'verktyg.server.shutdown': shutdown_server,
+            'SERVER_SOFTWARE':      self.server_version,
+            'REQUEST_METHOD':       self.command,
+            'SCRIPT_NAME':          '',
+            'PATH_INFO':            wsgi_encoding_dance(path_info),
+            'QUERY_STRING':         wsgi_encoding_dance(request_url.query),
+            'CONTENT_TYPE':         self.headers.get('Content-Type', ''),
+            'CONTENT_LENGTH':       self.headers.get('Content-Length', ''),
+            'REMOTE_ADDR':          self.client_address[0],
+            'REMOTE_PORT':          self.client_address[1],
+            'SERVER_NAME':          self.server.server_address[0],
+            'SERVER_PORT':          str(self.server.server_address[1]),
+            'SERVER_PROTOCOL':      self.request_version
+        }
+
+        for key, value in self.headers.items():
+            key = 'HTTP_' + key.upper().replace('-', '_')
+            if key not in ('HTTP_CONTENT_TYPE', 'HTTP_CONTENT_LENGTH'):
+                environ[key] = value
+
+        if request_url.netloc:
+            environ['HTTP_HOST'] = request_url.netloc
+
+        if hasattr(self.request, 'getpeercert'):
+            environ['REMOTE_CERT'] = self.request.getpeercert()
+
+        return environ
+
+    def run_wsgi(self):
+        if self.headers.get('Expect', '').lower().strip() == '100-continue':
+            self.wfile.write(b'HTTP/1.1 100 Continue\r\n\r\n')
+
+        self.environ = environ = self.make_environ()
+        headers_set = []
+        headers_sent = []
+
+        def write(data):
+            assert headers_set, 'write() before start_response'
+            if not headers_sent:
+                status, response_headers = headers_sent[:] = headers_set
+                try:
+                    code, msg = status.split(None, 1)
+                except ValueError:
+                    code, msg = status, ""
+                self.send_response(int(code), msg)
+                header_keys = set()
+                for key, value in response_headers:
+                    self.send_header(key, value)
+                    key = key.lower()
+                    header_keys.add(key)
+                if 'content-length' not in header_keys:
+                    self.close_connection = True
+                    self.send_header('Connection', 'close')
+                if 'server' not in header_keys:
+                    self.send_header('Server', self.version_string())
+                if 'date' not in header_keys:
+                    self.send_header('Date', self.date_time_string())
+                self.end_headers()
+
+            assert isinstance(data, bytes), 'applications must write bytes'
+            self.wfile.write(data)
+            self.wfile.flush()
+
+        def start_response(status, response_headers, exc_info=None):
+            if exc_info:
+                try:
+                    if headers_sent:
+                        exc_type, exc_value, exc_traceback = exc_info
+                        if exc_value.__traceback__ is not exc_traceback:
+                            raise exc_value.with_traceback(exc_traceback)
+                        raise exc_value
+                finally:
+                    exc_info = None
+            elif headers_set:
+                raise AssertionError('Headers already set')
+            headers_set[:] = [status, response_headers]
+            return write
+
+        def execute(app):
+            application_iter = app(environ, start_response)
+            try:
+                for data in application_iter:
+                    write(data)
+                if not headers_sent:
+                    write(b'')
+            finally:
+                if hasattr(application_iter, 'close'):
+                    application_iter.close()
+                application_iter = None
+
+        try:
+            execute(self.server.app)
+        except (socket.error, socket.timeout) as e:
+            self.connection_dropped(e, environ)
+        except Exception:
+            if self.server.passthrough_errors:
+                raise
+            from werkzeug.debug.tbtools import get_current_traceback
+            traceback = get_current_traceback(ignore_system_exceptions=True)
+            try:
+                # if we haven't yet sent the headers but they are set
+                # we roll back to be able to set them again.
+                if not headers_sent:
+                    del headers_set[:]
+                execute(InternalServerError())
+            except Exception:
+                pass
+            self.server.log(
+                'error', 'Error on request:\n%s', traceback.plaintext
+            )
+
+    def handle(self):
+        """Handles a request ignoring dropped connections."""
+        rv = None
+        try:
+            rv = BaseHTTPRequestHandler.handle(self)
+        except (socket.error, socket.timeout, ssl.SSLError) as e:
+            self.connection_dropped(e)
+        if self.server.shutdown_signal:
+            self.initiate_shutdown()
+        return rv
+
+    def initiate_shutdown(self):
+        """A horrible, horrible way to kill the server for Python 2.6 and
+        later.  It's the best we can do.
+        """
+        # Windows does not provide SIGKILL, go with SIGTERM then.
+        sig = getattr(signal, 'SIGKILL', signal.SIGTERM)
+        # reloader active
+        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            os.kill(os.getpid(), sig)
+        # python 2.7
+        self.server._BaseServer__shutdown_request = True
+        # python 2.6
+        self.server._BaseServer__serving = False
+
+    def connection_dropped(self, error, environ=None):
+        """Called if the connection was closed by the client.  By default
+        nothing happens.
+        """
+
+    def handle_one_request(self):
+        """Handle a single HTTP request."""
+        self.raw_requestline = self.rfile.readline()
+        if not self.raw_requestline:
+            self.close_connection = 1
+        elif self.parse_request():
+            return self.run_wsgi()
+
+    def send_response(self, code, message=None):
+        """Send the response header and log the response code."""
+        self.log_request(code)
+        if message is None:
+            message = code in self.responses and self.responses[code][0] or ''
+        if self.request_version != 'HTTP/0.9':
+            hdr = "%s %d %s\r\n" % (self.protocol_version, code, message)
+            self.wfile.write(hdr.encode('ascii'))
+
+    def version_string(self):
+        return BaseHTTPRequestHandler.version_string(self).strip()
+
+    def address_string(self):
+        return self.environ['REMOTE_ADDR']
+
+    def log_request(self, code='-', size='-'):
+        self.log('info', '"%s" %s %s', self.requestline, code, size)
+
+    def log_error(self, *args):
+        self.log('error', *args)
+
+    def log_message(self, format, *args):
+        self.log('info', format, *args)
+
+    def log(self, type, message, *args):
+        type = {
+            'critical': logging.CRITICAL,
+            'error': logging.ERROR,
+            'warning': logging.WARNING,
+            'info': logging.INFO,
+            'debug': logging.DEBUG,
+        }[type]
+
+        log.log(
+            type, '%s - - [%s] %s\n' % (
+                self.address_string(),
+                self.log_date_time_string(),
+                message % args
+            )
+        )
+
+
+class BaseWSGIServer(HTTPServer, object):
+    """Simple single-threaded, single-process WSGI server."""
+    multithread = False
+    multiprocess = False
+    request_queue_size = 128
+
+    def __init__(
+                self, socket, app, *, handler=None,
+                passthrough_errors=False, ssl_context=None
+            ):
+        if handler is None:
+            handler = WSGIRequestHandler
+
+        self.socket = socket
+        server_address = self.socket.getsockname()
+        socketserver.BaseServer.__init__(self, server_address, handler)
+
+        host, port = server_address[:2]
+        self.server_name = getfqdn(host)
+        self.server_port = port
+
+        self.app = app
+        self.passthrough_errors = passthrough_errors
+        self.shutdown_signal = False
+
+    def log(self, type, message, *args):
+        log.log(type, message, *args)
+
+    def serve_forever(self):
+        self.shutdown_signal = False
+        try:
+            HTTPServer.serve_forever(self)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.server_close()
+
+    def handle_error(self, request, client_address):
+        if self.passthrough_errors:
+            raise
+        else:
+            return HTTPServer.handle_error(self, request, client_address)
+
+    def get_request(self):
+        con, info = self.socket.accept()
+        return con, info
+
+
+class ThreadedWSGIServer(socketserver.ThreadingMixIn, BaseWSGIServer):
+    """A WSGI server that does threading."""
+    multithread = True
+
+
+class ForkingWSGIServer(socketserver.ForkingMixIn, BaseWSGIServer):
+    """A WSGI server that does forking."""
+    multiprocess = True
+
+    def __init__(
+                self, socket, app, *, processes=40, handler=None,
+                passthrough_errors=False
+            ):
+        BaseWSGIServer.__init__(
+            self, socket, app, handler=handler,
+            passthrough_errors=passthrough_errors
+        )
+        self.max_children = processes
+
+
+def make_server(
+            socket, app=None, *, threaded=False, processes=1,
+            request_handler=None, passthrough_errors=False, ssl_context=None
+        ):
+    """Create a new server instance listening on the given socket that is
+    either threaded, or forks or just processes one request after another.
+    """
+    if threaded and processes > 1:
+        raise TypeError(
+            "cannot have a multithreaded and multi process server."
+        )
+    elif threaded:
+        return ThreadedWSGIServer(
+            socket, app, handler=request_handler,
+            passthough_errors=passthrough_errors,
+        )
+    elif processes > 1:
+        return ForkingWSGIServer(
+            socket, app,  handler=request_handler,
+            passthrough_errors=passthrough_errors,
+            processes=processes
+        )
+    else:
+        return BaseWSGIServer(
+            socket, app, handler=request_handler,
+            passthrough_errors=passthrough_errors
+        )
+
+
+def make_socket(
+            host, port=0, family=None, type=socket.SOCK_STREAM,
+            backlog=2048, blocking=True, ssl_context=None
+        ):
+    if host.startswith('fd://'):
+        # Socket has been passed in
+        fd = int(host[len('fd://'):])
+        sock = socket.fromfd(fd, family, type)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    else:
+        # Create socket from scratch.
+        # From a unix socket path:
+        if host.startswith('unix:'):
+            if family is None:
+                family = socket.AF_UNIX
+            if family is not socket.AF_UNIX:
+                raise ValueError(
+                    "got unix socket address but socket family is not AF_UNIX"
+                )
+            address = host[len('unix:'):]
+        # From a normal ipv4 or ipv6 address:
+        else:
+            if family is None:
+                if ':' in host:
+                    family = socket.AF_INET6
+                else:
+                    family = socket.AF_INET
+            if family is socket.AF_UNIX:
+                raise ValueError("expected unix socket path")
+
+            address = (host, port)
+
+        sock = socket.socket(family, type)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        sock.bind(address)
+        sock.listen(backlog)
+
+    if blocking:
+        sock.setblocking(1)
+    else:
+        sock.setblocking(0)
+
+    if ssl_context is not None:
+        if isinstance(ssl_context, tuple):
+            ssl_context = load_ssl_context(*ssl_context)
+        if ssl_context == 'adhoc':
+            ssl_context = generate_adhoc_ssl_context()
+        sock = ssl_context.wrap_socket(sock, server_side=True)
+
+    return sock
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '--listen-socket', type=str,
+        description=(
+            'Path of a unix socket to listen on.  If the socket does '
+            'not exist it will be created'
+        )
+    )
+    parser.add_argument(
+        '--listen-address', type=str,
+        description=(
+            'Hostname or address to listen on.  Can include optional port'
+        )
+    )
+    parser.add_argument(
+        'app_factory', metavar='FACTORY',
+        description=(
+            'module path of function to be called to generate wsgi '
+            'application'
+        )
+    )

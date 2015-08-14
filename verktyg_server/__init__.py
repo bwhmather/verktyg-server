@@ -202,30 +202,17 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
         return self.environ['REMOTE_ADDR']
 
     def log_request(self, code='-', size='-'):
-        self.log('info', '"%s" %s %s', self.requestline, code, size)
+        self.logger.info('%r %s %s', self.requestline, code, size)
 
     def log_error(self, *args):
-        self.log('error', *args)
+        self.logger.error(format, *args)
 
     def log_message(self, format, *args):
-        self.log('info', format, *args)
+        self.logger.info(format, *args)
 
-    def log(self, type, message, *args):
-        type = {
-            'critical': logging.CRITICAL,
-            'error': logging.ERROR,
-            'warning': logging.WARNING,
-            'info': logging.INFO,
-            'debug': logging.DEBUG,
-        }[type]
-
-        log.log(
-            type, '%s - - [%s] %s\n' % (
-                self.address_string(),
-                self.log_date_time_string(),
-                message % args
-            )
-        )
+    @property
+    def logger(self):
+        return self.server.logger
 
 
 class BaseWSGIServer(HTTPServer, object):
@@ -236,8 +223,15 @@ class BaseWSGIServer(HTTPServer, object):
 
     def __init__(
                 self, socket, app, *, handler=None,
-                passthrough_errors=False, ssl_context=None
+                passthrough_errors=False, ssl_context=None,
+                logger=None
             ):
+        if logger is None:
+            logger = 'verktyg-server'
+        if isinstance(logger, str):
+            logger = logging.getLogger(logger)
+        self.logger = logger
+
         if handler is None:
             handler = WSGIRequestHandler
 

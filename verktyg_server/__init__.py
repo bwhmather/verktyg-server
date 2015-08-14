@@ -7,10 +7,8 @@
     :license:
         BSD, see LICENSE for more details.
 """
-import os
 import sys
 from urllib.parse import urlparse, unquote as urlunquote
-import signal
 import ssl
 import socket
 from socket import getfqdn
@@ -46,9 +44,6 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
     def make_environ(self):
         request_url = urlparse(self.path)
 
-        def shutdown_server():
-            self.server.shutdown_signal = True
-
         path_info = urlunquote(request_url.path)
 
         environ = {
@@ -58,7 +53,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             'wsgi.multithread':     self.server.multithread,
             'wsgi.multiprocess':    self.server.multiprocess,
             'wsgi.run_once':        False,
-            'verktyg.server.shutdown': shutdown_server,
+            'verktyg.server.shutdown': self.server.shutdown,
             'SERVER_SOFTWARE':      self.server_version,
             'REQUEST_METHOD':       self.command,
             'SCRIPT_NAME':          '',
@@ -176,23 +171,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             rv = BaseHTTPRequestHandler.handle(self)
         except (socket.error, socket.timeout, ssl.SSLError) as e:
             self.connection_dropped(e)
-        if self.server.shutdown_signal:
-            self.initiate_shutdown()
         return rv
-
-    def initiate_shutdown(self):
-        """A horrible, horrible way to kill the server for Python 2.6 and
-        later.  It's the best we can do.
-        """
-        # Windows does not provide SIGKILL, go with SIGTERM then.
-        sig = getattr(signal, 'SIGKILL', signal.SIGTERM)
-        # reloader active
-        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-            os.kill(os.getpid(), sig)
-        # python 2.7
-        self.server._BaseServer__shutdown_request = True
-        # python 2.6
-        self.server._BaseServer__serving = False
 
     def connection_dropped(self, error, environ=None):
         """Called if the connection was closed by the client.  By default
@@ -272,13 +251,11 @@ class BaseWSGIServer(HTTPServer, object):
 
         self.app = app
         self.passthrough_errors = passthrough_errors
-        self.shutdown_signal = False
 
     def log(self, type, message, *args):
         log.log(type, message, *args)
 
     def serve_forever(self):
-        self.shutdown_signal = False
         try:
             HTTPServer.serve_forever(self)
         except KeyboardInterrupt:

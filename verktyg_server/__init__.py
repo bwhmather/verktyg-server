@@ -8,7 +8,7 @@
         BSD, see LICENSE for more details.
 """
 import sys
-from urllib.parse import urlparse, unquote as urlunquote
+import urllib.parse
 import ssl
 import socket
 from socket import getfqdn
@@ -26,12 +26,6 @@ log = logging.getLogger('verktyg_server')
 __version__ = pkg_resources.get_distribution("verktyg-server").version
 
 
-def wsgi_encoding_dance(s, charset='utf-8', errors='replace'):
-    if isinstance(s, bytes):
-        return s
-    return s.encode(charset, errors)
-
-
 class WSGIRequestHandler(BaseHTTPRequestHandler, object):
     """A request handler that implements WSGI dispatching."""
 
@@ -40,9 +34,11 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
         return 'verktyg-server/' + __version__
 
     def make_environ(self):
-        request_url = urlparse(self.path)
+        request_url = urllib.parse.urlparse(self.path)
 
-        path_info = urlunquote(request_url.path)
+        path = urllib.parse.unquote_to_bytes(
+            request_url.path
+        ).decode('iso-8859-1')
 
         environ = {
             'wsgi.version':         (1, 0),
@@ -55,8 +51,8 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             'SERVER_SOFTWARE':      self.server_version,
             'REQUEST_METHOD':       self.command,
             'SCRIPT_NAME':          '',
-            'PATH_INFO':            wsgi_encoding_dance(path_info),
-            'QUERY_STRING':         wsgi_encoding_dance(request_url.query),
+            'PATH_INFO':            path,
+            'QUERY_STRING':         request_url.query,
             'CONTENT_TYPE':         self.headers.get('Content-Type', ''),
             'CONTENT_LENGTH':       self.headers.get('Content-Length', ''),
             'REMOTE_ADDR':          self.client_address[0],

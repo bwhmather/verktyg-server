@@ -29,7 +29,7 @@ class TestServer(object):
         self.port = socket.getsockname()[1]
 
         self._server = make_server(
-            self._socket, self._app,
+            socket, self._app,
             threaded=self._threaded,
             request_handler=self._request_handler,
         )

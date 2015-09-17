@@ -376,29 +376,12 @@ def make_socket(
 def main():
     import argparse
     import importlib
+    import verktyg_server.argparse
 
     parser = argparse.ArgumentParser()
 
-    addr_group = parser.add_mutually_exclusive_group(required=True)
-    addr_group.add_argument(
-        '--socket', type=str,
-        help=(
-            'Path of a unix socket to listen on.  If the socket does '
-            'not exist it will be created'
-        )
-    )
-    addr_group.add_argument(
-        '--address', type=str,
-        help=(
-            'Hostname or address to listen on.  Can include optional port'
-        )
-    )
-    addr_group.add_argument(
-        '--fd', type=str,
-        help=(
-            'file descriptor to listen on'
-        )
-    )
+    verktyg_server.argparse.add_arguments(parser)
+
     parser.add_argument(
         'app_factory', metavar='FACTORY',
         help=(
@@ -409,16 +392,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.socket:
-        raise NotImplementedError()
-    elif args.address:
-        raise NotImplementedError()
-    elif args.fd:
-        socket = make_socket('fd://%s' % args.fd)
-
     module_name, factory_name = args.app_factory.split(':')
     factory = getattr(importlib.import_module(module_name), factory_name)
     application = factory()
 
-    server = make_server(socket, application)
+    server = verktyg_server.argparse.make_server(args, application)
     server.serve_forever()

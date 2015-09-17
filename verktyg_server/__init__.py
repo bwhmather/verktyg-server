@@ -375,26 +375,50 @@ def make_socket(
 
 def main():
     import argparse
+    import importlib
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        '--listen-socket', type=str,
-        description=(
+    addr_group = parser.add_mutually_exclusive_group(required=True)
+    addr_group.add_argument(
+        '--socket', type=str,
+        help=(
             'Path of a unix socket to listen on.  If the socket does '
             'not exist it will be created'
         )
     )
-    parser.add_argument(
-        '--listen-address', type=str,
-        description=(
+    addr_group.add_argument(
+        '--address', type=str,
+        help=(
             'Hostname or address to listen on.  Can include optional port'
+        )
+    )
+    addr_group.add_argument(
+        '--fd', type=str,
+        help=(
+            'file descriptor to listen on'
         )
     )
     parser.add_argument(
         'app_factory', metavar='FACTORY',
-        description=(
+        help=(
             'module path of function to be called to generate wsgi '
             'application'
         )
     )
+
+    args = parser.parse_args()
+
+    if args.socket:
+        raise NotImplementedError()
+    elif args.address:
+        raise NotImplementedError()
+    elif args.fd:
+        socket = make_socket('fd://%s' % args.fd)
+
+    module_name, factory_name = args.app_factory.split(':')
+    factory = getattr(importlib.import_module(module_name), factory_name)
+    application = factory()
+
+    server = make_server(socket, application)
+    server.serve_forever()

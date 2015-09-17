@@ -323,6 +323,8 @@ def make_socket(
         ):
     if host.startswith('fd://'):
         # Socket has been passed in
+        if family is None:
+            family = socket.AF_UNIX
         fd = int(host[len('fd://'):])
         sock = socket.fromfd(fd, family, type)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

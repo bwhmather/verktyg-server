@@ -219,8 +219,7 @@ class BaseWSGIServer(HTTPServer, object):
 
     def __init__(
                 self, socket, app, *, handler=None,
-                passthrough_errors=False, ssl_context=None,
-                logger=None
+                passthrough_errors=False, logger=None
             ):
         if logger is None:
             logger = 'verktyg-server'
@@ -286,7 +285,7 @@ class ForkingWSGIServer(socketserver.ForkingMixIn, BaseWSGIServer):
 
 def make_server(
             socket, app=None, *, threaded=False, processes=1,
-            request_handler=None, passthrough_errors=False, ssl_context=None
+            request_handler=None, passthrough_errors=False
         ):
     """Create a new server instance listening on the given socket that is
     either threaded, or forks or just processes one request after another.

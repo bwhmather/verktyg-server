@@ -15,6 +15,9 @@ from threading import Thread
 from verktyg_server import make_socket, make_server
 from verktyg_server.testing import choose_port
 
+import logging
+logging.disable(logging.CRITICAL)
+
 
 class ServingTestCase(unittest.TestCase):
     def test_basic(self):
@@ -36,6 +39,26 @@ class ServingTestCase(unittest.TestCase):
 
             resp = conn.getresponse()
             self.assertEqual(resp.read(), b"Hello world!")
+        finally:
+            server.shutdown()
+            thread.join()
+
+    def test_yield_no_set_headers(self):
+        def application(environ, start_response):
+            return [b"Who needs headers"]
+
+        port = choose_port('localhost')
+
+        server = make_server(make_socket('localhost', port), application)
+        thread = Thread(target=server.serve_forever)
+        thread.start()
+
+        try:
+            conn = HTTPConnection('localhost', port)
+            conn.request('GET', '/')
+
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 500)
         finally:
             server.shutdown()
             thread.join()

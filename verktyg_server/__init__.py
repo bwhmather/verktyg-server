@@ -17,8 +17,6 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import pkg_resources
 
-from verktyg.exceptions import InternalServerError
-
 from verktyg_server.ssl import load_ssl_context, generate_adhoc_ssl_context
 
 import logging
@@ -147,22 +145,24 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             execute(self.server.app)
         except (socket.error, socket.timeout) as e:
             self.connection_dropped(e, environ)
-        except Exception:
+        except Exception as e:
             if self.server.passthrough_errors:
                 raise
-            from werkzeug.debug.tbtools import get_current_traceback
-            traceback = get_current_traceback(ignore_system_exceptions=True)
+            self.logger.error("Error on request", exc_info=True)
             try:
                 # if we haven't yet sent the headers but they are set
                 # we roll back to be able to set them again.
                 if not headers_sent:
                     del headers_set[:]
-                execute(InternalServerError())
+                execute(self.render_error)
             except Exception:
-                pass
-            self.server.log(
-                'error', 'Error on request:\n%s', traceback.plaintext
-            )
+                self.logger.exception("error recovering from failed response")
+
+    def render_error(self, environ, start_response):
+        status = '500 Internal Server Error'
+        headers = [('Content-type', 'text/html')]
+        start_response(status, headers)
+        return [b"<h1>Internal Server Error</h1>"]
 
     def handle(self):
         """Handles a request ignoring dropped connections."""

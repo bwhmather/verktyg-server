@@ -8,6 +8,7 @@
         BSD, see LICENSE for more details.
 """
 import verktyg_server
+import urllib.parse
 
 
 def add_arguments(parser):
@@ -44,7 +45,14 @@ def make_server(args, application):
     if args.socket:
         raise NotImplementedError()
     elif args.address:
-        raise NotImplementedError()
+        components = urllib.parse.urlparse(args.address)
+        if components.scheme == 'https':
+            raise NotImplementedError()
+        if components.params or components.query or components.fragment:
+            raise ValueError("expected host name and optionally port")
+        socket = verktyg_server.make_socket(
+            components.host, components.port
+        )
     elif args.fd:
         socket = verktyg_server.make_socket('fd://%s' % args.fd)
 

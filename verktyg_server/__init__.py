@@ -17,7 +17,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import pkg_resources
 
-from verktyg_server.ssl import load_ssl_context, generate_adhoc_ssl_context
+from verktyg_server.ssl import load_ssl_context, make_adhoc_ssl_context
 
 import logging
 log = logging.getLogger('verktyg_server')
@@ -362,7 +362,7 @@ def make_socket(
         if isinstance(ssl_context, tuple):
             ssl_context = load_ssl_context(*ssl_context)
         if ssl_context == 'adhoc':
-            ssl_context = generate_adhoc_ssl_context()
+            ssl_context = make_adhoc_ssl_context()
         sock = ssl_context.wrap_socket(sock, server_side=True)
 
     return sock

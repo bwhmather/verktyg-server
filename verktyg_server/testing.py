@@ -22,6 +22,14 @@ class TestServer(object):
         self._request_handler = request_handler
         self._ssl_context = ssl_context
 
+    @property
+    def protocol(self):
+        return 'https' if self._ssl_context else 'http'
+
+    @property
+    def address(self):
+        return '%s://%s:%s/' % (self.protocol, self.host, self.port)
+
     def __enter__(self):
         self.host = 'localhost'
 

@@ -7,10 +7,8 @@
     :license:
         BSD, see LICENSE for more details.
 """
-import os
 import sys
-from urllib.parse import urlparse, unquote as urlunquote
-import signal
+import urllib.parse
 import ssl
 import socket
 from socket import getfqdn
@@ -19,21 +17,13 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import pkg_resources
 
-from verktyg.exceptions import InternalServerError
-
-from verktyg_server.ssl import load_ssl_context, generate_adhoc_ssl_context
+from verktyg_server.ssl import load_ssl_context, make_adhoc_ssl_context
 
 import logging
 log = logging.getLogger('verktyg_server')
 
 
 __version__ = pkg_resources.get_distribution("verktyg-server").version
-
-
-def wsgi_encoding_dance(s, charset='utf-8', errors='replace'):
-    if isinstance(s, bytes):
-        return s
-    return s.encode(charset, errors)
 
 
 class WSGIRequestHandler(BaseHTTPRequestHandler, object):
@@ -44,12 +34,11 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
         return 'verktyg-server/' + __version__
 
     def make_environ(self):
-        request_url = urlparse(self.path)
+        request_url = urllib.parse.urlparse(self.path)
 
-        def shutdown_server():
-            self.server.shutdown_signal = True
-
-        path_info = urlunquote(request_url.path)
+        path = urllib.parse.unquote_to_bytes(
+            request_url.path
+        ).decode('iso-8859-1')
 
         environ = {
             'wsgi.version':         (1, 0),
@@ -58,12 +47,12 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             'wsgi.multithread':     self.server.multithread,
             'wsgi.multiprocess':    self.server.multiprocess,
             'wsgi.run_once':        False,
-            'verktyg.server.shutdown': shutdown_server,
+            'verktyg.server.shutdown': self.server.shutdown,
             'SERVER_SOFTWARE':      self.server_version,
             'REQUEST_METHOD':       self.command,
             'SCRIPT_NAME':          '',
-            'PATH_INFO':            wsgi_encoding_dance(path_info),
-            'QUERY_STRING':         wsgi_encoding_dance(request_url.query),
+            'PATH_INFO':            path,
+            'QUERY_STRING':         request_url.query,
             'CONTENT_TYPE':         self.headers.get('Content-Type', ''),
             'CONTENT_LENGTH':       self.headers.get('Content-Length', ''),
             'REMOTE_ADDR':          self.client_address[0],
@@ -152,22 +141,24 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             execute(self.server.app)
         except (socket.error, socket.timeout) as e:
             self.connection_dropped(e, environ)
-        except Exception:
+        except Exception as e:
             if self.server.passthrough_errors:
                 raise
-            from werkzeug.debug.tbtools import get_current_traceback
-            traceback = get_current_traceback(ignore_system_exceptions=True)
+            self.logger.error("Error on request", exc_info=True)
             try:
                 # if we haven't yet sent the headers but they are set
                 # we roll back to be able to set them again.
                 if not headers_sent:
                     del headers_set[:]
-                execute(InternalServerError())
+                execute(self.render_error)
             except Exception:
-                pass
-            self.server.log(
-                'error', 'Error on request:\n%s', traceback.plaintext
-            )
+                self.logger.exception("error recovering from failed response")
+
+    def render_error(self, environ, start_response):
+        status = '500 Internal Server Error'
+        headers = [('Content-type', 'text/html')]
+        start_response(status, headers)
+        return [b"<h1>Internal Server Error</h1>"]
 
     def handle(self):
         """Handles a request ignoring dropped connections."""
@@ -176,23 +167,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             rv = BaseHTTPRequestHandler.handle(self)
         except (socket.error, socket.timeout, ssl.SSLError) as e:
             self.connection_dropped(e)
-        if self.server.shutdown_signal:
-            self.initiate_shutdown()
         return rv
-
-    def initiate_shutdown(self):
-        """A horrible, horrible way to kill the server for Python 2.6 and
-        later.  It's the best we can do.
-        """
-        # Windows does not provide SIGKILL, go with SIGTERM then.
-        sig = getattr(signal, 'SIGKILL', signal.SIGTERM)
-        # reloader active
-        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-            os.kill(os.getpid(), sig)
-        # python 2.7
-        self.server._BaseServer__shutdown_request = True
-        # python 2.6
-        self.server._BaseServer__serving = False
 
     def connection_dropped(self, error, environ=None):
         """Called if the connection was closed by the client.  By default
@@ -223,30 +198,17 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
         return self.environ['REMOTE_ADDR']
 
     def log_request(self, code='-', size='-'):
-        self.log('info', '"%s" %s %s', self.requestline, code, size)
+        self.logger.info('%r %s %s', self.requestline, code, size)
 
     def log_error(self, *args):
-        self.log('error', *args)
+        self.logger.error(format, *args)
 
     def log_message(self, format, *args):
-        self.log('info', format, *args)
+        self.logger.info(format, *args)
 
-    def log(self, type, message, *args):
-        type = {
-            'critical': logging.CRITICAL,
-            'error': logging.ERROR,
-            'warning': logging.WARNING,
-            'info': logging.INFO,
-            'debug': logging.DEBUG,
-        }[type]
-
-        log.log(
-            type, '%s - - [%s] %s\n' % (
-                self.address_string(),
-                self.log_date_time_string(),
-                message % args
-            )
-        )
+    @property
+    def logger(self):
+        return self.server.logger
 
 
 class BaseWSGIServer(HTTPServer, object):
@@ -257,8 +219,14 @@ class BaseWSGIServer(HTTPServer, object):
 
     def __init__(
                 self, socket, app, *, handler=None,
-                passthrough_errors=False, ssl_context=None
+                passthrough_errors=False, logger=None
             ):
+        if logger is None:
+            logger = 'verktyg-server'
+        if isinstance(logger, str):
+            logger = logging.getLogger(logger)
+        self.logger = logger
+
         if handler is None:
             handler = WSGIRequestHandler
 
@@ -272,13 +240,11 @@ class BaseWSGIServer(HTTPServer, object):
 
         self.app = app
         self.passthrough_errors = passthrough_errors
-        self.shutdown_signal = False
 
     def log(self, type, message, *args):
         log.log(type, message, *args)
 
     def serve_forever(self):
-        self.shutdown_signal = False
         try:
             HTTPServer.serve_forever(self)
         except KeyboardInterrupt:
@@ -319,7 +285,7 @@ class ForkingWSGIServer(socketserver.ForkingMixIn, BaseWSGIServer):
 
 def make_server(
             socket, app=None, *, threaded=False, processes=1,
-            request_handler=None, passthrough_errors=False, ssl_context=None
+            request_handler=None, passthrough_errors=False
         ):
     """Create a new server instance listening on the given socket that is
     either threaded, or forks or just processes one request after another.
@@ -352,6 +318,8 @@ def make_socket(
         ):
     if host.startswith('fd://'):
         # Socket has been passed in
+        if family is None:
+            family = socket.AF_UNIX
         fd = int(host[len('fd://'):])
         sock = socket.fromfd(fd, family, type)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -394,7 +362,7 @@ def make_socket(
         if isinstance(ssl_context, tuple):
             ssl_context = load_ssl_context(*ssl_context)
         if ssl_context == 'adhoc':
-            ssl_context = generate_adhoc_ssl_context()
+            ssl_context = make_adhoc_ssl_context()
         sock = ssl_context.wrap_socket(sock, server_side=True)
 
     return sock
@@ -402,26 +370,26 @@ def make_socket(
 
 def main():
     import argparse
+    import importlib
+    import verktyg_server.argparse
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        '--listen-socket', type=str,
-        description=(
-            'Path of a unix socket to listen on.  If the socket does '
-            'not exist it will be created'
-        )
-    )
-    parser.add_argument(
-        '--listen-address', type=str,
-        description=(
-            'Hostname or address to listen on.  Can include optional port'
-        )
-    )
+    verktyg_server.argparse.add_arguments(parser)
+
     parser.add_argument(
         'app_factory', metavar='FACTORY',
-        description=(
+        help=(
             'module path of function to be called to generate wsgi '
             'application'
         )
     )
+
+    args = parser.parse_args()
+
+    module_name, factory_name = args.app_factory.split(':')
+    factory = getattr(importlib.import_module(module_name), factory_name)
+    application = factory()
+
+    server = verktyg_server.argparse.make_server(args, application)
+    server.serve_forever()

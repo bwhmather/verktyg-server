@@ -85,7 +85,7 @@ def make_ssl_devcert(base_path, host=None, cn=None):
     return cert_file, pkey_file
 
 
-def generate_adhoc_ssl_context():
+def make_adhoc_ssl_context():
     """Generates an adhoc SSL context for the development server."""
     crypto = _get_openssl_crypto_module()
     import tempfile
@@ -114,7 +114,7 @@ def load_ssl_context(cert_file, pkey_file=None):
         Path of the private key to use. If not given, the key will be obtained
         from the certificate file.
     """
-    context = ssl.create_default_ssl_context(ssl.Purpose.CLIENT_AUTH)
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     context.load_cert_chain(cert_file, pkey_file)
 
     return context

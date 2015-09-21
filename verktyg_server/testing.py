@@ -7,18 +7,9 @@
     :license:
         BSD, see LICENSE for more details.
 """
-import socket
 from threading import Thread
 
 from verktyg_server import make_server, make_socket
-
-
-def choose_port(host):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((host, 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
 
 
 class TestServer(object):
@@ -31,15 +22,22 @@ class TestServer(object):
         self._request_handler = request_handler
         self._ssl_context = ssl_context
 
+    @property
+    def protocol(self):
+        return 'https' if self._ssl_context else 'http'
+
+    @property
+    def address(self):
+        return '%s://%s:%s/' % (self.protocol, self.host, self.port)
+
     def __enter__(self):
         self.host = 'localhost'
-        self.port = choose_port(self.host)
 
-        self._socket = make_socket(
-            self.host, self.port, ssl_context=self._ssl_context
-        )
+        socket = make_socket(self.host, 0, ssl_context=self._ssl_context)
+        self.port = socket.getsockname()[1]
+
         self._server = make_server(
-            self._socket, self._app,
+            socket, self._app,
             threaded=self._threaded,
             request_handler=self._request_handler,
         )

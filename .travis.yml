@@ -16,3 +16,11 @@ script:
 
 after_success:
   - "coveralls"
+
+deploy:
+  provider: pypi
+  user: "bwhmather-travis"
+  password:
+    secure: "SDa8j11mqA2oeOmuPaMFAE5zekTQFsULWJITGMd+0cVCdSiznPDhG4bg+6wof3JQ53ERXcPSznFNnoyu441cIouvL8TaKPpO9P5etTGb4ygChbmTEZNdyaO6SqGBH1p0HJQusyQseToIn+rGyHAv2CodQ+v8QdJicZ75nSSud+A5Z1sLvXdOIgobXhnciOx+wqpYrod4b8E1413dHULTPP92qHlHjo2yDPzFV6CPrbZExaSy7cxZRJXgYZ84MEUidl1rbgzqS2d+bPIMD7ekAnzrBSyJfAoH+r4RTSpastAkvU6rcZg43WUPbzR+dJTdstppmpJRyJQ3C3bDx8PA+LkX84u95DYBX3+hgSmEj7ngdVV1lFt5imZOWUPJiWLLkp5566XEIppqJuj2AjeqIHSDelCrQWRgU9PUBEs0lBnfTXEIXleABJDFi+7oHD03siSgMnWggvn9HX3tSDvXCxXjKLhNC/CZ9dv6REzU4VDH66rG5kw7DyCbl3WndyWKXtE5W2OayVLpyIGxEik6WvSYCyIn+j4NdfInYkCNfYC6ZDEqbsptCoGj+H3M+vzB1uoltb5urPjbjVlbNVMhcxXpcPj06lMCdgugGxfziMqwCLsIMzY2QAUJPPDPlHLbOtmjkfhuL/hXs44W1VyWQVbIKoUtOUAO9sBXJOutm9A="
+  on:
+    branch: "master"

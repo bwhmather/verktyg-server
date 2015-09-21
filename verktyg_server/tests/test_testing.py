@@ -38,7 +38,7 @@ class TestServerTestCase(unittest.TestCase):
             return [b'hello ssl']
 
         server_ssl_context = make_adhoc_ssl_context()
-        client_ssl_context = ssl._create_unverified_context()  # TODO
+        client_ssl_context = ssl._create_stdlib_context()  # TODO
 
         with TestServer(application, ssl_context=server_ssl_context) as server:
             client = HTTPSConnection(

@@ -10,14 +10,13 @@ from setuptools import setup, find_packages
 extras_require = {
     'SSL': [
         'cryptography',
-        'pyOpenSSL'
     ]
 }
 
 
 setup(
     name='verktyg-server',
-    version='0.1.0',
+    version='0.1.1',
     url='https://github.com/bwhmather/verktyg-server',
     license='BSD',
     author='Ben Mather',

@@ -10,43 +10,44 @@
 import os
 import sys
 import ssl
-
-
-def _get_openssl_crypto_module():
-    try:
-        from OpenSSL import crypto
-    except ImportError:
-        raise TypeError('Using ad-hoc certificates requires the pyOpenSSL '
-                        'library.')
-    else:
-        return crypto
+from datetime import datetime, timedelta
 
 
 def generate_adhoc_ssl_pair(cn=None):
     from random import random
-    crypto = _get_openssl_crypto_module()
+    from cryptography import x509
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.hashes import SHA256
+    from cryptography.hazmat.backends import default_backend
 
     # pretty damn sure that this is not actually accepted by anyone
     if cn is None:
         cn = '*'
 
-    cert = crypto.X509()
-    cert.set_serial_number(int(random() * sys.maxsize))
-    cert.gmtime_adj_notBefore(0)
-    cert.gmtime_adj_notAfter(60 * 60 * 24 * 365)
+    now = datetime.now()
 
-    subject = cert.get_subject()
-    subject.CN = cn
-    subject.O = 'Dummy Certificate'
+    pkey = rsa.generate_private_key(65537, 2048, backend=default_backend())
 
-    issuer = cert.get_issuer()
-    issuer.CN = 'Untrusted Authority'
-    issuer.O = 'Self-Signed'
+    bldr = x509.CertificateBuilder()\
+        .serial_number(int(random() * sys.maxsize))\
+        .not_valid_before(now)\
+        .not_valid_after(datetime.now() + timedelta(days=1))\
+        .subject_name(x509.Name([
+            x509.NameAttribute(
+                x509.NameOID.COMMON_NAME, cn,
+            ),
+        ]))\
+        .issuer_name(x509.Name([
+            x509.NameAttribute(
+                x509.NameOID.COMMON_NAME, 'Untrusted Authority'
+            ),
+            x509.NameAttribute(
+                x509.NameOID.ORGANIZATION_NAME, 'Self-Signed'
+            )
+        ]))\
+        .public_key(pkey.public_key())
 
-    pkey = crypto.PKey()
-    pkey.generate_key(crypto.TYPE_RSA, 1024)
-    cert.set_pubkey(pkey)
-    cert.sign(pkey, 'md5')
+    cert = bldr.sign(pkey, SHA256(), backend=default_backend())
 
     return cert, pkey
 
@@ -69,7 +70,10 @@ def make_ssl_devcert(base_path, host=None, cn=None):
     :param cn:
         The `CN` to use.
     """
-    from OpenSSL import crypto
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, PrivateFormat, NoEncryption
+    )
+
     if host is not None:
         cn = '*.%s/CN=%s' % (host, host)
     cert, pkey = generate_adhoc_ssl_pair(cn=cn)
@@ -78,16 +82,20 @@ def make_ssl_devcert(base_path, host=None, cn=None):
     pkey_file = base_path + '.key'
 
     with open(cert_file, 'wb') as f:
-        f.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
+        f.write(cert.public_bytes(Encoding.PEM))
     with open(pkey_file, 'wb') as f:
-        f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, pkey))
+        f.write(pkey.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        ))
 
     return cert_file, pkey_file
 
 
 def make_adhoc_ssl_context():
     """Generates an adhoc SSL context for the development server."""
-    crypto = _get_openssl_crypto_module()
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, PrivateFormat, NoEncryption
+    )
     import tempfile
     import atexit
 
@@ -97,8 +105,10 @@ def make_adhoc_ssl_context():
     atexit.register(os.remove, pkey_file)
     atexit.register(os.remove, cert_file)
 
-    os.write(cert_handle, crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
-    os.write(pkey_handle, crypto.dump_privatekey(crypto.FILETYPE_PEM, pkey))
+    os.write(cert_handle, cert.public_bytes(Encoding.PEM))
+    os.write(pkey_handle, pkey.private_bytes(
+        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+    ))
     os.close(cert_handle)
     os.close(pkey_handle)
     ctx = load_ssl_context(cert_file, pkey_file)

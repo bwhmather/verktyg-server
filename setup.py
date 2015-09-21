@@ -10,7 +10,6 @@ from setuptools import setup, find_packages
 extras_require = {
     'SSL': [
         'cryptography',
-        'pyOpenSSL'
     ]
 }
 

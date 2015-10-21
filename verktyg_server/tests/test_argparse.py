@@ -47,3 +47,12 @@ class ArgParseTestCase(unittest.TestCase):
             parser.parse_args(
                 '--socket socket --address address'.split()
             )
+
+    def test_private_key_only(self):
+        parser = SilentArgumentParser()
+        add_arguments(parser)
+
+        with self.assertRaises(ParseError):
+            parser.parse_args(
+                '--address address --private-key path/to/key_file.pem'
+            )

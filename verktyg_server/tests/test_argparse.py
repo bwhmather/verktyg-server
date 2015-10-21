@@ -48,6 +48,17 @@ class ArgParseTestCase(unittest.TestCase):
                 '--socket socket --address address'.split()
             )
 
+    def test_address(self):
+        parser = SilentArgumentParser()
+        add_arguments(parser)
+
+        options = parser.parse_args(
+            '--address http://example.com:8000'.split()
+        )
+        self.assertEqual(options.address.scheme, 'http')
+        self.assertEqual(options.address.hostname, 'example.com')
+        self.assertEqual(options.address.port, 8000)
+
     def test_private_key_only(self):
         parser = SilentArgumentParser()
         add_arguments(parser)

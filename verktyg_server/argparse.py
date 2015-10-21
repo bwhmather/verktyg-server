@@ -7,10 +7,59 @@
     :license:
         BSD, see LICENSE for more details.
 """
-import urllib.parse
+import re
+from collections import namedtuple
+from argparse import ArgumentTypeError
 
 import verktyg_server
 import verktyg_server.ssl
+
+
+_address_re = re.compile(r'''
+    ^
+    (?:
+        (?P<scheme> [a-z]+)
+        ://
+    )?
+    (?P<hostname>
+        (?:
+            [A-Za-z0-9]
+            [A-Za-z0-9\-]*
+        )
+        (?:
+            \.
+            [A-Za-z0-9]
+            [A-Za-z0-9\-]*
+        )*
+    )
+    (?:
+        :
+        (?P<port> [0-9]+)
+    )?
+    $
+''', re.VERBOSE)
+
+
+_Address = namedtuple('Address', ['scheme', 'hostname', 'port'])
+
+
+class _AddressType(object):
+    def __call__(self, string):
+        match = _address_re.match(string)
+
+        if match is None:
+            raise ArgumentTypeError("Invalid address %r" % string)
+
+        scheme, hostname, port = match.group('scheme', 'hostname', 'port')
+
+        # TODO should scheme be validated here?
+        if scheme and scheme not in {'https', 'http'}:
+            raise ArgumentTypeError("Invalid scheme %r" % scheme)
+
+        if port is not None:
+            port = int(port)
+
+        return _Address(scheme, hostname, port)
 
 
 def add_arguments(parser):
@@ -27,7 +76,7 @@ def add_arguments(parser):
         )
     )
     addr_group.add_argument(
-        '--address', type=str,
+        '--address', type=_AddressType(),
         help=(
             'Hostname or address to listen on.  Can include optional port'
         )
@@ -71,21 +120,13 @@ def make_server(args, application):
         raise NotImplementedError()
 
     elif args.address:
-        components = urllib.parse.urlparse(args.address)
-
-        if any(components[2:]):
-            raise ValueError("Expected plain address")
-
-        if components.scheme and components.scheme not in {'https', 'http'}:
-            raise ValueError()
-
-        scheme = components.scheme
+        scheme = args.address.scheme
         if not scheme:
             scheme = 'https' if ssl_context else 'http'
 
-        address = components.hostname
+        address = args.address.hostname
 
-        if not components.port:
+        if not args.address.port:
             port = {
                 'http': 80,
                 'https': 443,

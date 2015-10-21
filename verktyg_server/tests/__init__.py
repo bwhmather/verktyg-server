@@ -10,7 +10,7 @@
 import unittest
 
 from verktyg_server.tests import (
-    test_ssl, test_sockets, test_serving, test_testing,
+    test_ssl, test_sockets, test_serving, test_testing, test_argparse,
 )
 
 
@@ -20,4 +20,5 @@ suite = unittest.TestSuite((
     loader.loadTestsFromModule(test_sockets),
     loader.loadTestsFromModule(test_serving),
     loader.loadTestsFromModule(test_testing),
+    loader.loadTestsFromModule(test_argparse),
 ))

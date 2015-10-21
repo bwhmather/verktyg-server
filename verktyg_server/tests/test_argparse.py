@@ -10,10 +10,7 @@
 import unittest
 import argparse
 
-from http.client import HTTPConnection
-from threading import Thread
-
-from verktyg_server.argparse import add_arguments, make_server
+from verktyg_server.argparse import add_arguments
 
 import logging
 logging.disable(logging.CRITICAL)
@@ -47,6 +44,6 @@ class ArgParseTestCase(unittest.TestCase):
         add_arguments(parser)
 
         with self.assertRaises(ParseError):
-            options = parser.parse_args(
+            parser.parse_args(
                 '--socket socket --address address'.split()
             )

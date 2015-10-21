@@ -7,8 +7,10 @@
     :license:
         BSD, see LICENSE for more details.
 """
-import verktyg_server
 import urllib.parse
+
+import verktyg_server
+import verktyg_server.ssl
 
 
 def add_arguments(parser):
@@ -57,7 +59,9 @@ def make_server(args, application):
     new http server
     """
     if args.certificate:
-        ssl_context = load_ssl_context(args.certificate, args.private_key)
+        ssl_context = verktyg_server.ssl.load_ssl_context(
+            args.certificate, args.private_key
+        )
     else:
         if args.private_key:
             raise ValueError("Private key provided but no certificate")
@@ -88,7 +92,7 @@ def make_server(args, application):
             }[scheme]
 
         if scheme == 'https' and not ssl_context:
-            ssl_context = make_adhoc_ssl_context()
+            ssl_context = verktyg_server.ssl.make_adhoc_ssl_context()
 
     elif args.fd:
         scheme = 'fd'

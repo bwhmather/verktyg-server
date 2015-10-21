@@ -8,28 +8,25 @@
         BSD, see LICENSE for more details.
 """
 import os
-import sys
+from uuid import uuid4
 import ssl
 from datetime import datetime, timedelta
 
 
-def generate_adhoc_ssl_pair(cn=None):
-    from random import random
+def generate_adhoc_ssl_ca_pair(cn='ca.example.com'):
+    """Create a ca key and certificate suitable for signing dev certificates
+    """
     from cryptography import x509
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives.hashes import SHA256
     from cryptography.hazmat.backends import default_backend
-
-    # pretty damn sure that this is not actually accepted by anyone
-    if cn is None:
-        cn = '*'
 
     now = datetime.now()
 
     pkey = rsa.generate_private_key(65537, 2048, backend=default_backend())
 
     bldr = x509.CertificateBuilder()\
-        .serial_number(int(random() * sys.maxsize))\
+        .serial_number(uuid4().int)\
         .not_valid_before(now)\
         .not_valid_after(datetime.now() + timedelta(days=1))\
         .subject_name(x509.Name([
@@ -39,15 +36,49 @@ def generate_adhoc_ssl_pair(cn=None):
         ]))\
         .issuer_name(x509.Name([
             x509.NameAttribute(
-                x509.NameOID.COMMON_NAME, 'Untrusted Authority'
+                x509.NameOID.COMMON_NAME, cn
             ),
-            x509.NameAttribute(
-                x509.NameOID.ORGANIZATION_NAME, 'Self-Signed'
-            )
         ]))\
         .public_key(pkey.public_key())
 
     cert = bldr.sign(pkey, SHA256(), backend=default_backend())
+
+    return cert, pkey
+
+
+def generate_adhoc_ssl_pair(cn='example.com', *, ca=None):
+    from cryptography import x509
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.hashes import SHA256
+    from cryptography.hazmat.backends import default_backend
+
+    now = datetime.now()
+
+    pkey = rsa.generate_private_key(65537, 2048, backend=default_backend())
+
+    bldr = x509.CertificateBuilder()\
+        .serial_number(uuid4().int)\
+        .not_valid_before(now)\
+        .not_valid_after(datetime.now() + timedelta(days=1))\
+        .subject_name(x509.Name([
+            x509.NameAttribute(
+                x509.NameOID.COMMON_NAME, cn,
+            ),
+        ]))\
+        .public_key(pkey.public_key())
+
+    if ca is not None:
+        ca_cert, ca_pkey = ca
+        bldr = bldr.issuer_name(ca_cert.issuer_name)
+        cert = bldr.sign(ca_pkey, SHA256(), backend=default_backend())
+
+    else:
+        bldr = bldr.issuer_name(x509.Name([
+            x509.NameAttribute(
+                x509.NameOID.COMMON_NAME, cn,
+            ),
+        ]))
+        cert = bldr.sign(pkey, SHA256(), backend=default_backend())
 
     return cert, pkey
 

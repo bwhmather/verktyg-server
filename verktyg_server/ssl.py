@@ -7,155 +7,131 @@
     :license:
         BSD, see LICENSE for more details.
 """
-import os
+import contextlib
 from uuid import uuid4
-import ssl
 from datetime import datetime, timedelta
+import os
+import tempfile
+import ssl
+
+from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 
-def generate_adhoc_ssl_ca_pair(cn='ca.example.com'):
-    """Create a ca key and certificate suitable for signing dev certificates
-    """
-    from cryptography import x509
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.hazmat.primitives.hashes import SHA256
-    from cryptography.hazmat.backends import default_backend
-
-    now = datetime.now()
-
-    pkey = rsa.generate_private_key(65537, 2048, backend=default_backend())
-
-    bldr = x509.CertificateBuilder()\
-        .serial_number(uuid4().int)\
-        .not_valid_before(now)\
-        .not_valid_after(datetime.now() + timedelta(days=1))\
-        .subject_name(x509.Name([
-            x509.NameAttribute(
-                x509.NameOID.COMMON_NAME, cn,
-            ),
-        ]))\
-        .issuer_name(x509.Name([
-            x509.NameAttribute(
-                x509.NameOID.COMMON_NAME, cn
-            ),
-        ]))\
-        .public_key(pkey.public_key())
-
-    cert = bldr.sign(pkey, SHA256(), backend=default_backend())
-
-    return cert, pkey
-
-
-def generate_adhoc_ssl_pair(cn='example.com', *, ca=None):
-    from cryptography import x509
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.hazmat.primitives.hashes import SHA256
-    from cryptography.hazmat.backends import default_backend
-
-    now = datetime.now()
-
-    pkey = rsa.generate_private_key(65537, 2048, backend=default_backend())
-
-    bldr = x509.CertificateBuilder()\
-        .serial_number(uuid4().int)\
-        .not_valid_before(now)\
-        .not_valid_after(datetime.now() + timedelta(days=1))\
-        .subject_name(x509.Name([
-            x509.NameAttribute(
-                x509.NameOID.COMMON_NAME, cn,
-            ),
-        ]))\
-        .public_key(pkey.public_key())
-
-    if ca is not None:
-        ca_cert, ca_pkey = ca
-        bldr = bldr.issuer_name(ca_cert.issuer_name)
-        cert = bldr.sign(ca_pkey, SHA256(), backend=default_backend())
-
-    else:
-        bldr = bldr.issuer_name(x509.Name([
-            x509.NameAttribute(
-                x509.NameOID.COMMON_NAME, cn,
-            ),
-        ]))
-        cert = bldr.sign(pkey, SHA256(), backend=default_backend())
-
-    return cert, pkey
-
-
-def make_ssl_devcert(base_path, host=None, cn=None):
-    """Creates an SSL key for development.  This should be used instead of
-    the ``'adhoc'`` key which generates a new cert on each server start.
-    It accepts a path for where it should store the key and cert and
-    either a host or CN.  If a host is given it will use the CN
-    ``*.host/CN=host``.
-
-    For more information see :func:`run_simple`.
-
-    :param base_path:
-        The path to the certificate and key.  The extension ``.crt`` is added
-        for the certificate, ``.key`` is added for the key.
-    :param host:
-        The name of the host.  This can be used as an alternative for the
-        `cn`.
-    :param cn:
-        The `CN` to use.
-    """
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding, PrivateFormat, NoEncryption
+def _serialize_private_key(key):
+    return key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()
     )
 
+
+def _deserialize_private_key(key_str):
+    return serialization.load_pem_private_key(
+        key_str, backend=default_backend(), password=None
+    )
+
+
+def _serialize_certificate(cert):
+    return cert.public_bytes(
+        serialization.Encoding.PEM
+    )
+
+
+def _deserialize_certificate(cert_str):
+    return x509.load_pem_x509_certificate(
+        cert_str, backend=default_backend()
+    )
+
+
+def _key_usage_extension(
+            *, digital_signature=False, content_commitment=False,
+            key_encipherment=False, data_encipherment=False,
+            key_agreement=False, key_cert_sign=False, crl_sign=False,
+            encipher_only=False, decipher_only=False
+        ):
+    return x509.KeyUsage(
+        digital_signature=digital_signature,
+        content_commitment=content_commitment,
+        key_encipherment=key_encipherment,
+        data_encipherment=data_encipherment,
+        key_agreement=key_agreement,
+        key_cert_sign=key_cert_sign, crl_sign=crl_sign,
+        encipher_only=encipher_only, decipher_only=decipher_only
+    )
+
+
+def generate_adhoc_ssl_pair(*, cn=None, host=None):
+    now = datetime.utcnow()
+    not_valid_before = now
+    not_valid_after = now + timedelta(days=16)
+
+    if cn and host or not (cn or host):
+        raise ValueError("Please specify one of common name or host")
+
     if host is not None:
-        cn = '*.%s/CN=%s' % (host, host)
-    cert, pkey = generate_adhoc_ssl_pair(cn=cn)
+        cn = '*.{host}/CN={host}'.format(host=host)
 
-    cert_file = base_path + '.crt'
-    pkey_file = base_path + '.key'
+    name = x509.Name([
+        x509.NameAttribute(
+            x509.NameOID.COMMON_NAME, cn,
+        ),
+    ])
 
-    with open(cert_file, 'wb') as f:
-        f.write(cert.public_bytes(Encoding.PEM))
-    with open(pkey_file, 'wb') as f:
-        f.write(pkey.private_bytes(
-            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
-        ))
+    key = rsa.generate_private_key(65537, 2048, backend=default_backend())
 
-    return cert_file, pkey_file
+    bldr = x509.CertificateBuilder()\
+        .serial_number(uuid4().int)\
+        .subject_name(name)\
+        .issuer_name(name)\
+        .not_valid_before(not_valid_before)\
+        .not_valid_after(not_valid_after)\
+        .add_extension(
+            _key_usage_extension(key_agreement=True), critical=True
+        )\
+        .public_key(key.public_key())
+
+    cert = bldr.sign(key, SHA256(), backend=default_backend())
+
+    return _serialize_certificate(cert), _serialize_private_key(key)
 
 
 def make_adhoc_ssl_context():
     """Generates an adhoc SSL context for the development server."""
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding, PrivateFormat, NoEncryption
-    )
-    import tempfile
-    import atexit
+    cert, key = generate_adhoc_ssl_pair(host='example.com')
 
-    cert, pkey = generate_adhoc_ssl_pair()
-    cert_handle, cert_file = tempfile.mkstemp()
-    pkey_handle, pkey_file = tempfile.mkstemp()
-    atexit.register(os.remove, pkey_file)
-    atexit.register(os.remove, cert_file)
+    with contextlib.ExitStack() as clean_stack:
+        with contextlib.ExitStack() as close_stack:
+            cert_handle, cert_file = tempfile.mkstemp(
+                prefix='verktyg-adhoc-', suffix='.cert.pem'
+            )
+            close_stack.callback(os.close, cert_handle)
+            clean_stack.callback(os.remove, cert_file)
 
-    os.write(cert_handle, cert.public_bytes(Encoding.PEM))
-    os.write(pkey_handle, pkey.private_bytes(
-        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
-    ))
-    os.close(cert_handle)
-    os.close(pkey_handle)
-    ctx = load_ssl_context(cert_file, pkey_file)
-    return ctx
+            key_handle, key_file = tempfile.mkstemp(
+                prefix='verktyg-adhoc-', suffix='.key.pem'
+            )
+            close_stack.callback(os.close, key_handle)
+            clean_stack.callback(os.remove, key_file)
+
+            os.write(cert_handle, cert)
+            os.write(key_handle, key)
+
+        return load_ssl_context(cert_file, key_file)
 
 
-def load_ssl_context(cert_file, pkey_file=None):
+def load_ssl_context(cert_file, key_file=None):
     """Creates an SSL context from a certificate and private key file.
 
     :param cert_file:
         Path of the certificate to use.
-    :param pkey_file:
+    :param key_file:
         Path of the private key to use. If not given, the key will be obtained
         from the certificate file.
     """
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    context.load_cert_chain(cert_file, pkey_file)
+    context.load_cert_chain(cert_file, key_file)
 
     return context

@@ -22,19 +22,10 @@ class TestServer(object):
         self._request_handler = request_handler
         self._ssl_context = ssl_context
 
-    @property
-    def protocol(self):
-        return 'https' if self._ssl_context else 'http'
-
-    @property
-    def address(self):
-        return '%s://%s:%s/' % (self.protocol, self.host, self.port)
-
-    def __enter__(self):
-        self.host = 'localhost'
+        self._host = 'localhost'
 
         socket = make_inet_socket(self.host, 0, ssl_context=self._ssl_context)
-        self.port = socket.getsockname()[1]
+        self._port = socket.getsockname()[1]
 
         self._server = make_server(
             socket, self._app,
@@ -45,8 +36,33 @@ class TestServer(object):
         self._thread = Thread(target=self._server.serve_forever)
         self._thread.start()
 
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+        self._server.shutdown()
+        self._thread.join()
+
+    @property
+    def protocol(self):
+        return 'https' if self._ssl_context else 'http'
+
+    @property
+    def host(self):
+        return self._host
+
+    @property
+    def port(self):
+        return self._port
+
+    @property
+    def address(self):
+        return '%s://%s:%s/' % (self.protocol, self.host, self.port)
+
+    def __enter__(self):
+        if self.closed:
+            raise ValueError("Cannot enter context with closed server")
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        self._server.shutdown()
-        self._thread.join()
+        self.close()

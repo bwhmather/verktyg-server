@@ -9,7 +9,7 @@
 """
 from threading import Thread
 
-from verktyg_server import make_server, make_socket
+from verktyg_server import make_server, make_inet_socket
 
 
 class TestServer(object):
@@ -33,7 +33,7 @@ class TestServer(object):
     def __enter__(self):
         self.host = 'localhost'
 
-        socket = make_socket(self.host, 0, ssl_context=self._ssl_context)
+        socket = make_inet_socket(self.host, 0, ssl_context=self._ssl_context)
         self.port = socket.getsockname()[1]
 
         self._server = make_server(

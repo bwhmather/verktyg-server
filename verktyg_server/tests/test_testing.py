@@ -4,7 +4,7 @@ import ssl
 from http.client import HTTPConnection, HTTPSConnection
 
 from verktyg_server.ssl import make_adhoc_ssl_context
-from verktyg_server import make_socket
+from verktyg_server import make_inet_socket
 from verktyg_server.testing import TestServer
 
 
@@ -28,7 +28,7 @@ class TestServerTestCase(unittest.TestCase):
 
         # make sure server is down after leaving context
         self.assertRaises(ConnectionRefusedError, client.request, 'GET', '/')
-        make_socket('localhost', port).close()
+        make_inet_socket('localhost', port).close()
 
     def test_ssl(self):
         def application(environ, start_response):

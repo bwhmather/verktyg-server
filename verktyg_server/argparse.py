@@ -116,17 +116,20 @@ def make_server(args, application):
             raise ValueError("Private key provided but no certificate")
         ssl_context = None
 
-    if args.socket:
-        raise NotImplementedError()
+    if args.socket is not None:
+        socket = verktyg_server.make_unix_socket(
+            args.socket, ssl_context=ssl_context
+        )
 
-    elif args.address:
+    elif args.address is not None:
         scheme = args.address.scheme
         if not scheme:
             scheme = 'https' if ssl_context else 'http'
 
         address = args.address.hostname
 
-        if not args.address.port:
+        port = args.address.port
+        if not port:
             port = {
                 'http': 80,
                 'https': 443,
@@ -135,15 +138,12 @@ def make_server(args, application):
         if scheme == 'https' and not ssl_context:
             ssl_context = verktyg_server.ssl.make_adhoc_ssl_context()
 
-    elif args.fd:
-        scheme = 'fd'
-        address = str(int(args.fd))
-        port = None
+        socket = verktyg_server.make_inet_socket(
+            address, port, ssl_context=ssl_context
+        )
 
-    socket = verktyg_server.make_socket(
-        '{scheme}://{address}'.format(scheme=scheme, address=address), port,
-        ssl_context=ssl_context
-    )
+    elif args.fd is not None:
+        socket = verktyg_server.make_fd_socket(args.fd)
 
     server = verktyg_server.make_server(socket, application)
     return server

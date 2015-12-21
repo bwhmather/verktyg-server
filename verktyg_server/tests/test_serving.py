@@ -12,7 +12,7 @@ import unittest
 from http.client import HTTPConnection
 from threading import Thread
 
-from verktyg_server import make_socket, make_server
+from verktyg_server import make_inet_socket, make_server
 
 import logging
 logging.disable(logging.CRITICAL)
@@ -26,7 +26,7 @@ class ServingTestCase(unittest.TestCase):
             start_response(status, headers)
             return [b"Hello world!"]
 
-        socket = make_socket('localhost')
+        socket = make_inet_socket('localhost')
         port = socket.getsockname()[1]
 
         server = make_server(socket, application)
@@ -47,7 +47,7 @@ class ServingTestCase(unittest.TestCase):
         def application(environ, start_response):
             return [b"Who needs headers"]
 
-        socket = make_socket('localhost')
+        socket = make_inet_socket('localhost')
         port = socket.getsockname()[1]
 
         server = make_server(socket, application)

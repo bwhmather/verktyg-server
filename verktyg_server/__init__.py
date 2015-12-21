@@ -312,58 +312,63 @@ def make_server(
         )
 
 
-def make_socket(
-            host, port=0, family=None, type=socket.SOCK_STREAM,
-            backlog=2048, blocking=True, ssl_context=None
+def _is_ipv6_address(address):
+    # TODO
+    return ':' in address
+
+
+def _wrap_ssl(sock, ssl_context):
+    if isinstance(ssl_context, tuple):
+        ssl_context = load_ssl_context(*ssl_context)
+    if ssl_context == 'adhoc':
+        ssl_context = make_adhoc_ssl_context()
+    return ssl_context.wrap_socket(sock, server_side=True)
+
+
+def make_inet_socket(
+            interface, port=0, *, backlog=2048, ssl_context=None
         ):
-    if host.startswith('fd://'):
-        # Socket has been passed in
-        if family is None:
-            family = socket.AF_UNIX
-        fd = int(host[len('fd://'):])
-        sock = socket.fromfd(fd, family, type)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
+    if _is_ipv6_address(interface):
+        family = socket.AF_INET6
     else:
-        # Create socket from scratch.
-        # From a unix socket path:
-        if host.startswith('unix:'):
-            if family is None:
-                family = socket.AF_UNIX
-            if family is not socket.AF_UNIX:
-                raise ValueError(
-                    "got unix socket address but socket family is not AF_UNIX"
-                )
-            address = host[len('unix:'):]
-        # From a normal ipv4 or ipv6 address:
-        else:
-            if family is None:
-                if ':' in host:
-                    family = socket.AF_INET6
-                else:
-                    family = socket.AF_INET
-            if family is socket.AF_UNIX:
-                raise ValueError("expected unix socket path")
+        family = socket.AF_INET
 
-            address = (host, port)
+    address = (interface, port)
 
-        sock = socket.socket(family, type)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setblocking(True)
 
-        sock.bind(address)
-        sock.listen(backlog)
-
-    if blocking:
-        sock.setblocking(1)
-    else:
-        sock.setblocking(0)
+    sock.bind(address)
+    sock.listen(backlog)
 
     if ssl_context is not None:
-        if isinstance(ssl_context, tuple):
-            ssl_context = load_ssl_context(*ssl_context)
-        if ssl_context == 'adhoc':
-            ssl_context = make_adhoc_ssl_context()
-        sock = ssl_context.wrap_socket(sock, server_side=True)
+        sock = _wrap_ssl(sock, ssl_context)
+
+    return sock
+
+
+def make_fd_socket(fd, *, family=socket.AF_UNIX, ssl_context=None):
+    sock = socket.fromfd(fd, family, type)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setblocking(True)
+
+    if ssl_context is not None:
+        sock = _wrap_ssl(sock, ssl_context)
+
+    return sock
+
+
+def make_unix_socket(filename, *, backlog=2048, ssl_context=None):
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setblocking(True)
+
+    sock.bind(filename)
+    sock.listen(backlog)
+
+    if ssl_context is not None:
+        sock = _wrap_ssl(sock, ssl_context)
 
     return sock
 

@@ -3,7 +3,7 @@ import unittest
 import ssl
 from http.client import HTTPConnection, HTTPSConnection
 
-from verktyg_server.ssl import make_adhoc_ssl_context
+from verktyg_server.sslutils import make_adhoc_ssl_context
 from verktyg_server import make_inet_socket
 from verktyg_server.testing import TestServer
 

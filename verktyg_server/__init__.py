@@ -318,7 +318,9 @@ def _is_ipv6_address(address):
 
 def _wrap_ssl(sock, ssl_context):
     # import here so that ``cryptography`` can be kept as a soft requirement
-    from verktyg_server.ssl import load_ssl_context, make_adhoc_ssl_context
+    from verktyg_server.sslutils import (
+        load_ssl_context, make_adhoc_ssl_context,
+    )
 
     if isinstance(ssl_context, tuple):
         ssl_context = load_ssl_context(*ssl_context)

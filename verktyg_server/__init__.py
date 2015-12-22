@@ -36,12 +36,18 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
     def make_environ(self):
         request_url = urllib.parse.urlparse(self.path)
 
+        if isinstance(self.server.socket, ssl.SSLSocket):
+            url_scheme = 'https'
+        else:
+            url_scheme = 'http'
+
         path = urllib.parse.unquote_to_bytes(
             request_url.path
         ).decode('iso-8859-1')
 
         environ = {
             'wsgi.version':         (1, 0),
+            'wsgi.url_scheme':      url_scheme,
             'wsgi.input':           self.rfile,
             'wsgi.errors':          sys.stderr,
             'wsgi.multithread':     self.server.multithread,

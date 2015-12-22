@@ -25,7 +25,6 @@ def _serialize_private_key(key):
 
 
 def _deserialize_private_key(key_str):
-    from cryptography import x509
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.backends import default_backend
 
@@ -44,7 +43,6 @@ def _serialize_certificate(cert):
 
 def _deserialize_certificate(cert_str):
     from cryptography import x509
-    from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.backends import default_backend
 
     return x509.load_pem_x509_certificate(

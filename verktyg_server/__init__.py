@@ -17,7 +17,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import pkg_resources
 
-from verktyg_server.ssl import load_ssl_context, make_adhoc_ssl_context
+from verktyg_server.sslutils import load_ssl_context, make_adhoc_ssl_context
 
 import logging
 log = logging.getLogger('verktyg_server')
@@ -36,12 +36,20 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
     def make_environ(self):
         request_url = urllib.parse.urlparse(self.path)
 
+        if request_url.scheme:
+            url_scheme = request_url.scheme
+        elif isinstance(self.server.socket, ssl.SSLSocket):
+            url_scheme = 'https'
+        else:
+            url_scheme = 'http'
+
         path = urllib.parse.unquote_to_bytes(
             request_url.path
         ).decode('iso-8859-1')
 
         environ = {
             'wsgi.version':         (1, 0),
+            'wsgi.url_scheme':      url_scheme,
             'wsgi.input':           self.rfile,
             'wsgi.errors':          sys.stderr,
             'wsgi.multithread':     self.server.multithread,

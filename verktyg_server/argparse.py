@@ -12,7 +12,7 @@ from collections import namedtuple
 from argparse import ArgumentTypeError
 
 import verktyg_server
-import verktyg_server.ssl
+import verktyg_server.sslutils
 
 
 _address_re = re.compile(r'''
@@ -108,7 +108,7 @@ def make_server(args, application):
     new http server
     """
     if args.certificate:
-        ssl_context = verktyg_server.ssl.load_ssl_context(
+        ssl_context = verktyg_server.sslutils.load_ssl_context(
             args.certificate, args.private_key
         )
     else:
@@ -136,7 +136,7 @@ def make_server(args, application):
             }[scheme]
 
         if scheme == 'https' and not ssl_context:
-            ssl_context = verktyg_server.ssl.make_adhoc_ssl_context()
+            ssl_context = verktyg_server.sslutils.make_adhoc_ssl_context()
 
         socket = verktyg_server.make_inet_socket(
             address, port, ssl_context=ssl_context

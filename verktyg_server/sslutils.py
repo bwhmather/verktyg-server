@@ -14,14 +14,10 @@ import os
 import tempfile
 import ssl
 
-from cryptography import x509
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives.hashes import SHA256
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.backends import default_backend
-
 
 def _serialize_private_key(key):
+    from cryptography.hazmat.primitives import serialization
+
     return key.private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption()
@@ -29,18 +25,26 @@ def _serialize_private_key(key):
 
 
 def _deserialize_private_key(key_str):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+
     return serialization.load_pem_private_key(
         key_str, backend=default_backend(), password=None
     )
 
 
 def _serialize_certificate(cert):
+    from cryptography.hazmat.primitives import serialization
+
     return cert.public_bytes(
         serialization.Encoding.PEM
     )
 
 
 def _deserialize_certificate(cert_str):
+    from cryptography import x509
+    from cryptography.hazmat.backends import default_backend
+
     return x509.load_pem_x509_certificate(
         cert_str, backend=default_backend()
     )
@@ -52,6 +56,7 @@ def _key_usage_extension(
             key_agreement=False, key_cert_sign=False, crl_sign=False,
             encipher_only=False, decipher_only=False
         ):
+    from cryptography import x509
     return x509.KeyUsage(
         digital_signature=digital_signature,
         content_commitment=content_commitment,
@@ -64,6 +69,11 @@ def _key_usage_extension(
 
 
 def generate_adhoc_ssl_pair(*, cn=None, host=None):
+    from cryptography import x509
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.hashes import SHA256
+    from cryptography.hazmat.backends import default_backend
+
     now = datetime.utcnow()
     not_valid_before = now
     not_valid_after = now + timedelta(days=16)

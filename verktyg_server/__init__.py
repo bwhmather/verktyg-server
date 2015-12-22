@@ -36,7 +36,9 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
     def make_environ(self):
         request_url = urllib.parse.urlparse(self.path)
 
-        if isinstance(self.server.socket, ssl.SSLSocket):
+        if request_url.scheme:
+            url_scheme = request_url.scheme
+        elif isinstance(self.server.socket, ssl.SSLSocket):
             url_scheme = 'https'
         else:
             url_scheme = 'http'

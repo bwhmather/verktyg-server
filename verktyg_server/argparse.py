@@ -62,7 +62,7 @@ class _AddressType(object):
         return _Address(scheme, hostname, port)
 
 
-def add_arguments(parser):
+def add_socket_arguments(parser):
     """Takes an ``argparse`` parser and populates it with the arguments
     required by :func:`make_server`
     """
@@ -71,51 +71,80 @@ def add_arguments(parser):
     addr_group.add_argument(
         '--socket', type=str,
         help=(
-            'Path of a unix socket to listen on.  If the socket does '
-            'not exist it will be created'
+            "Path of a unix socket to listen on.  If the socket does "
+            "not exist it will be created"
         )
     )
     addr_group.add_argument(
         '--address', type=_AddressType(),
         help=(
-            'Hostname or address to listen on.  Can include optional port'
+            "Hostname or address to listen on.  Can include optional port"
         )
     )
     addr_group.add_argument(
         '--fd', type=str,
         help=(
-            'File descriptor to listen on'
+            "File descriptor to listen on"
         )
     )
 
+
+def add_ssl_arguments(parser):
     group = parser.add_argument_group("SSL Options")
     group.add_argument(
         '--certificate', type=str,
         help=(
-            'Path to certificate file'
+            "Path to certificate file"
         )
     )
     group.add_argument(
         '--private-key', type=str,
         help=(
-            'Path to private key file'
+            "Path to private key file"
+        )
+    )
+    group.add_argument(
+        '--adhoc-ssl', type=bool, default=False,
+        help=(
+            "Create an ssl context with a new self-signed certificate"
         )
     )
 
 
-def make_server(args, application):
-    """Takes an `argparse` namespace and a wsgi application and returns a
-    new http server
+def add_arguments(parser):
+    add_socket_arguments(parser)
+    add_ssl_arguments(parser)
+
+
+def make_ssl_context(args):
     """
+    :returns:
+        ``None`` if no ssl context requested
+    """
+    if args.adhoc_ssl:
+        if args.certificate or args.private_key:
+            raise ValueError(
+                "adhoc ssl context requested with details for explicit context"
+            )
+        ssl_context = verktyg_server.sslutils.make_adhoc_ssl_context()
+        return ssl_context
+
     if args.certificate:
         ssl_context = verktyg_server.sslutils.load_ssl_context(
             args.certificate, args.private_key
         )
-    else:
-        if args.private_key:
-            raise ValueError("Private key provided but no certificate")
-        ssl_context = None
+        return ssl_context
 
+    if args.private_key:
+        raise ValueError("Private key provided but no certificate")
+
+    return None
+
+
+def make_socket(args, ssl_context):
+    """Takes an `argparse` namespace and a wsgi application and returns a
+    new http server
+    """
     if args.socket is not None:
         socket = verktyg_server.make_unix_socket(
             args.socket, ssl_context=ssl_context
@@ -123,8 +152,19 @@ def make_server(args, application):
 
     elif args.address is not None:
         scheme = args.address.scheme
+        if scheme == 'https' and not ssl_context:
+            raise ValueError("ssl server requested but no details for context")
+
+        if scheme == 'http' and ssl_context:
+            raise ValueError("trying to create http server with ssl")
+
         if not scheme:
             scheme = 'https' if ssl_context else 'http'
+
+        if scheme not in {'https', 'http'}:
+            raise ValueError(
+                "if provided scheme should be either http or https"
+            )
 
         address = args.address.hostname
 
@@ -135,15 +175,20 @@ def make_server(args, application):
                 'https': 443,
             }[scheme]
 
-        if scheme == 'https' and not ssl_context:
-            ssl_context = verktyg_server.sslutils.make_adhoc_ssl_context()
-
         socket = verktyg_server.make_inet_socket(
             address, port, ssl_context=ssl_context
         )
 
     elif args.fd is not None:
         socket = verktyg_server.make_fd_socket(args.fd)
+
+    return socket
+
+
+def make_server(args, application):
+    ssl_context = make_ssl_context(args)
+
+    socket = make_socket(args, ssl_context)
 
     server = verktyg_server.make_server(socket, application)
     return server

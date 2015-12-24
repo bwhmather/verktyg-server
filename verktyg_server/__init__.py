@@ -357,7 +357,7 @@ def make_inet_socket(
 
 
 def make_fd_socket(fd, *, family=socket.AF_UNIX, ssl_context=None):
-    sock = socket.fromfd(fd, family, type)
+    sock = socket.fromfd(fd, family, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setblocking(True)
 

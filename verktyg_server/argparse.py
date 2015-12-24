@@ -62,9 +62,34 @@ class _AddressType(object):
         return _Address(scheme, hostname, port)
 
 
+def add_ssl_arguments(parser):
+    """Takes an ``argparse`` parser and populates it with the arguments
+    required by :func:`make_ssl_context`
+    """
+    group = parser.add_argument_group("SSL Options")
+    group.add_argument(
+        '--certificate', type=str,
+        help=(
+            "Path to certificate file"
+        )
+    )
+    group.add_argument(
+        '--private-key', type=str,
+        help=(
+            "Path to private key file"
+        )
+    )
+    group.add_argument(
+        '--adhoc-ssl', type=bool, default=False,
+        help=(
+            "Create an ssl context with a new self-signed certificate"
+        )
+    )
+
+
 def add_socket_arguments(parser):
     """Takes an ``argparse`` parser and populates it with the arguments
-    required by :func:`make_server`
+    required by :func:`make_socket`
     """
     group = parser.add_argument_group("Serving Options")
     addr_group = group.add_mutually_exclusive_group(required=True)
@@ -89,37 +114,24 @@ def add_socket_arguments(parser):
     )
 
 
-def add_ssl_arguments(parser):
-    group = parser.add_argument_group("SSL Options")
-    group.add_argument(
-        '--certificate', type=str,
-        help=(
-            "Path to certificate file"
-        )
-    )
-    group.add_argument(
-        '--private-key', type=str,
-        help=(
-            "Path to private key file"
-        )
-    )
-    group.add_argument(
-        '--adhoc-ssl', type=bool, default=False,
-        help=(
-            "Create an ssl context with a new self-signed certificate"
-        )
-    )
-
-
 def add_arguments(parser):
+    """Takes an ``argparse`` parser and populates it with the arguments
+    required by :func:`make_server`
+    """
     add_socket_arguments(parser)
     add_ssl_arguments(parser)
 
 
 def make_ssl_context(args):
-    """
+    """Create a new ssl context with settings from the command line
+
+    :param args:
+        An :module:`argparse` namespace populated with the arguments from
+        :func:`add_ssl_arguments`
+
     :returns:
-        ``None`` if no ssl context requested
+        An :class:`ssl.SSLContext` instance with settings loaded from
+        arguments, or``None`` if no ssl context is requested.
     """
     if args.adhoc_ssl:
         if args.certificate or args.private_key:
@@ -141,9 +153,17 @@ def make_ssl_context(args):
     return None
 
 
-def make_socket(args, ssl_context):
-    """Takes an `argparse` namespace and a wsgi application and returns a
-    new http server
+def make_socket(args, ssl_context=None):
+    """Create a new socket using settings from command line
+
+    :param args:
+        An :module:`argparse` namespace populated with the arguments from
+        :func:`add_socket_arguments`
+    :param ssl_context:
+        An :class:`ssl.SSLContext` instance or ``None.
+
+    :returns:
+        A new stream :class:`socket.Socket` instance.
     """
     if args.socket is not None:
         socket = verktyg_server.make_unix_socket(
@@ -186,6 +206,16 @@ def make_socket(args, ssl_context):
 
 
 def make_server(args, application):
+    """Create a new http server using settings from the command line
+
+    :param args:
+        An :module:`argparse` namespace populated with the arguments from
+        :func:`add_arguments`
+    :param application:
+        The wsgi application to serve
+    :returns:
+        A verktyg server that can be run by calling the `run_forever` method
+    """
     ssl_context = make_ssl_context(args)
 
     socket = make_socket(args, ssl_context)

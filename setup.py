@@ -16,7 +16,7 @@ extras_require = {
 
 setup(
     name='verktyg-server',
-    version='0.1.4',
+    version='0.1.5',
     url='https://github.com/bwhmather/verktyg-server',
     license='BSD',
     author='Ben Mather',

@@ -379,6 +379,27 @@ def make_unix_socket(filename, *, backlog=2048, ssl_context=None):
     return sock
 
 
+def make_socket(address, ssl_context=None):
+    components = urllib.parse.urlsplit(address)
+
+    if components.scheme in {'http', 'https'}:
+        host, port = components.netloc.split(':', 1)
+
+        if port:
+            port = int(port)
+        else:
+            port = {
+                'http': 80,
+                'https': 443,
+            }[components.scheme]
+
+        return make_inet_socket(host, port, ssl_context=ssl_context)
+    elif components.scheme == 'fd':
+        return make_fd_socket(int(components.netloc), ssl_context=ssl_context)
+    elif components.scheme == 'unix':
+        return make_unix_socket(components.path, ssl_context=ssl_context)
+
+
 def main():
     import argparse
     import importlib

@@ -79,7 +79,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             environ['HTTP_HOST'] = request_url.netloc
 
         if hasattr(self.request, 'getpeercert'):
-            environ['REMOTE_CERT'] = self.request.getpeercert()
+            environ['REMOTE_CERT'] = self.request.getpeercert(binary_form=True)
 
         return environ
 

@@ -333,9 +333,7 @@ def _wrap_ssl(sock, ssl_context):
     return ssl_context.wrap_socket(sock, server_side=True)
 
 
-def make_inet_socket(
-            interface, port=0, *, backlog=2048, ssl_context=None
-        ):
+def make_inet_socket(interface, port=0, *, backlog=2048, ssl_context=None):
     if _is_ipv6_address(interface):
         family = socket.AF_INET6
     else:

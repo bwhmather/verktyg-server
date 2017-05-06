@@ -67,8 +67,8 @@ Please post any problems or feature requests using the `issue tracker <issues_>`
 .. |build-status| image:: https://travis-ci.org/bwhmather/verktyg-server.png?branch=master
     :target: http://travis-ci.org/bwhmather/verktyg-server
     :alt: Build Status
-.. |coverage| image:: https://coveralls.io/repos/bwhmather/verktyg-server/badge.png?branch=develop
-    :target: https://coveralls.io/r/bwhmather/verktyg-server?branch=develop
+.. |coverage| image:: https://coveralls.io/repos/github/bwhmather/verktyg-server/badge.svg?branch=develop
+    :target: https://coveralls.io/github/bwhmather/verktyg-server?branch=develop
     :alt: Coverage
 .. _verktyg: https://github.com/bwhmather/verktyg
 .. _verktyg_server: https://github.com/bwhmather/verktyg-server

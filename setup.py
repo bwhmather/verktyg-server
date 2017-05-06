@@ -35,7 +35,7 @@ setup(
     ],
     platforms='any',
     install_requires=[
-        'verktyg >= 0.8, < 0.9',
+        'verktyg >= 0.9, < 0.10',
     ],
     tests_require=[
         test for extra in {'SSL'} for test in extras_require[extra]

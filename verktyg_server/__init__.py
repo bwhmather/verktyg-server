@@ -398,6 +398,10 @@ def make_socket(address, ssl_context=None):
         return make_fd_socket(int(components.netloc), ssl_context=ssl_context)
     elif components.scheme == 'unix':
         return make_unix_socket(components.path, ssl_context=ssl_context)
+    else:
+        raise ValueError((
+            "address {address!r} has unsupported scheme {scheme!r}"
+        ).format(address=address, scheme=components.scheme))
 
 
 def main():

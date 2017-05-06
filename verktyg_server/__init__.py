@@ -380,6 +380,50 @@ def make_unix_socket(filename, *, backlog=2048, ssl_context=None):
 
 
 def make_socket(address, ssl_context=None):
+    """Creates a new listening socket bound to the interface, socket or file
+    descriptor indicated by the address parameter.
+
+    To bind to a port on an interface:
+
+    To listen for http traffic on localhost port 8080:
+
+        make_socket('http://localhost:8080')
+
+    To listen for https traffic on the default localhost port, 443:
+
+        make_socket('https://localhost', ssl_context=ssl_context)
+
+    When the https url scheme is used, you must pass `ssl_context`.
+
+    Binding to an ip address:
+
+        make_socket('http://127.0.0.1:80')
+
+    If no scheme is passed, the address is treated as a hostname or ip address
+    and the protocol is based on whether there is an `ssl_context`.
+
+        make_socket('127.0.0.1')
+
+    It is possible to bind to a socket passed in as a file descriptor.  This is
+    useful for running under init systems that support socket activation.
+
+        make_socket('fd:0')
+
+    Unix sockets are also supported.  These are typically used when running
+    behind a local reverse-proxy.
+
+        make_socket('unix:///var/run/example.com/socket')
+
+    :param address:
+        String describing what to bind to.
+
+    :param ssl_context:
+        An optional :class:`ssl.SSLContext` to use for encrypting traffic sent
+        over the socket.
+
+    :return socket.socket:
+        A socket suitable for running an http server on.
+    """
     components = urllib.parse.urlsplit(address)
 
     if components.scheme in {'http', 'https', ''}:

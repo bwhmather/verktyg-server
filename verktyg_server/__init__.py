@@ -382,7 +382,7 @@ def make_unix_socket(filename, *, backlog=2048, ssl_context=None):
 def make_socket(address, ssl_context=None):
     components = urllib.parse.urlsplit(address)
 
-    if components.scheme in {'http', 'https'}:
+    if components.scheme in {'http', 'https', ''}:
         host, port = components.netloc.split(':', 1)
 
         if port:

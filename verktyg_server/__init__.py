@@ -79,7 +79,7 @@ class WSGIRequestHandler(BaseHTTPRequestHandler, object):
             environ['HTTP_HOST'] = request_url.netloc
 
         if hasattr(self.request, 'getpeercert'):
-            environ['REMOTE_CERT'] = self.request.getpeercert()
+            environ['REMOTE_CERT'] = self.request.getpeercert(binary_form=True)
 
         return environ
 
@@ -333,9 +333,7 @@ def _wrap_ssl(sock, ssl_context):
     return ssl_context.wrap_socket(sock, server_side=True)
 
 
-def make_inet_socket(
-            interface, port=0, *, backlog=2048, ssl_context=None
-        ):
+def make_inet_socket(interface, port=0, *, backlog=2048, ssl_context=None):
     if _is_ipv6_address(interface):
         family = socket.AF_INET6
     else:
@@ -357,7 +355,7 @@ def make_inet_socket(
 
 
 def make_fd_socket(fd, *, family=socket.AF_UNIX, ssl_context=None):
-    sock = socket.fromfd(fd, family, type)
+    sock = socket.fromfd(fd, family, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setblocking(True)
 
@@ -379,6 +377,27 @@ def make_unix_socket(filename, *, backlog=2048, ssl_context=None):
         sock = _wrap_ssl(sock, ssl_context)
 
     return sock
+
+
+def make_socket(address, ssl_context=None):
+    components = urllib.parse.urlsplit(address)
+
+    if components.scheme in {'http', 'https'}:
+        host, port = components.netloc.split(':', 1)
+
+        if port:
+            port = int(port)
+        else:
+            port = {
+                'http': 80,
+                'https': 443,
+            }[components.scheme]
+
+        return make_inet_socket(host, port, ssl_context=ssl_context)
+    elif components.scheme == 'fd':
+        return make_fd_socket(int(components.netloc), ssl_context=ssl_context)
+    elif components.scheme == 'unix':
+        return make_unix_socket(components.path, ssl_context=ssl_context)
 
 
 def main():

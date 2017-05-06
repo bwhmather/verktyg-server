@@ -16,7 +16,7 @@ extras_require = {
 
 setup(
     name='verktyg-server',
-    version='0.1.5',
+    version='0.1.6',
     url='https://github.com/bwhmather/verktyg-server',
     license='BSD',
     author='Ben Mather',
@@ -35,7 +35,7 @@ setup(
     ],
     platforms='any',
     install_requires=[
-        'verktyg >= 0.8, < 0.9',
+        'verktyg >= 0.9, < 0.10',
     ],
     tests_require=[
         test for extra in {'SSL'} for test in extras_require[extra]

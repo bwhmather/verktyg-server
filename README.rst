@@ -12,6 +12,7 @@ Basic
 ~~~~~
 
 .. code:: python
+
     from verktyg_server import make_socket, make_server
 
 
@@ -34,6 +35,7 @@ Basic HTTPS
 ~~~~~~~~~~~
 
 .. code:: python
+
     from verktyg_server import make_socket, make_server, load_ssl_context
 
 

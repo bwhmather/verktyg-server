@@ -7,11 +7,11 @@ install:
   - "pip install -e ."
   - "pip install coveralls"
   - "pip install pyflakes"
-  - "pip install pep8"
+  - "pip install pycodestyle"
 
 script:
   - "coverage run --source=verktyg_server setup.py test"
-  - "pep8 verktyg_server setup.py"
+  - "pycodestyle verktyg_server setup.py"
   - "pyflakes verktyg_server setup.py"
 
 after_success:
